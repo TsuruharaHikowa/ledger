@@ -65,6 +65,14 @@ input { font: inherit; color: inherit; }
 .period button:active { background: var(--fill); }
 .period .label { width: auto; padding: 0 6px; font-size: 15px; font-weight: 600; color: var(--ink); border-radius: 8px; font-variant-numeric: tabular-nums; }
 
+/* 明细页：标题、月份切换和汇总卡片固定在顶部，只有下面的明细滚动 */
+.pin {
+  position: sticky; top: 0; z-index: 5; background: var(--bg);
+  /* 抵消 #view 的上、左右内边距，让背景盖满整个顶部，滚上去的明细不会从缝里露出来 */
+  margin: calc(-1 * (env(safe-area-inset-top) + 30px)) -16px 0;
+  padding: calc(env(safe-area-inset-top) + 30px) 16px 8px;
+}
+.pin + .day { margin-top: 12px; }
 /* 汇总卡片 */
 .hero { background: var(--card); border-radius: 16px; padding: 18px; }
 .hero .k { font-size: 13px; color: var(--muted); }

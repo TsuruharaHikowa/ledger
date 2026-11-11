@@ -122,6 +122,7 @@ function viewHome() {
     return parts.length ? `<div>${word} ${parts.map(([k, v]) => money(v, k)).join(' · ')}</div>` : '';
   };
   return `
+  <div class="pin">
   <div class="top">
     <div class="title"><h1>记账本</h1>${curPill()}</div>
     ${periodNav(monthLabel(S.month), 'home')}
@@ -135,6 +136,7 @@ function viewHome() {
     </div>
     ${others.length ? `<div class="others"><span class="k">其他币种</span>${otherLine('expense', '支出')}${otherLine('income', '收入')}</div>` : ''}
   </section>
+  </div>
   ${days.length ? days.map(dayBlock).join('') : `<div class="empty">这个月还没有记录<br>点右下角的 + 记一笔</div>`}`;
 }
 function periodNav(label, scope) {
@@ -679,6 +681,12 @@ addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setT
   // 离线支持：本地调试时默认不启用缓存，加 ?sw=1 可强制启用
   const local = ['localhost', '127.0.0.1'].includes(location.hostname);
   if ('serviceWorker' in navigator && (!local || location.search.includes('sw=1'))) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    // 新版本接管后自动刷新一次，让改动立即生效（首次安装不刷新；正在记账时不打断）
+    const hadSW = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadSW && !S.sheet) location.reload(); });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+      // 从后台切回来时也检查一次更新（主屏幕 App 常常不会真正重启）
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+    }).catch(() => {});
   }
 })();
