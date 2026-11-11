@@ -545,11 +545,13 @@ function renderSheet() {
   const k = S.sheet.kind;
   $('#sheet').innerHTML = k === 'edit' ? sheetEdit() : k === 'cur' ? sheetCur() : sheetCats();
   $('#sheet-root').hidden = false;
+  document.documentElement.classList.add('sheet-open');
 }
 function closeSheet() {
   const wasCats = S.sheet?.kind === 'cats';
   S.sheet = null;
   $('#sheet-root').hidden = true;
+  document.documentElement.classList.remove('sheet-open');
   if (wasCats) render();
 }
 let toastTimer;

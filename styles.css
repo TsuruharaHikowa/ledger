@@ -188,6 +188,11 @@ button.item:active { background: var(--fill); }
   animation: up .26s cubic-bezier(.2,.9,.3,1);
   max-height: 94%; display: flex; flex-direction: column;
 }
+/* 弹层打开时锁住后面的页面，滑动不再穿透到背景 */
+html.sheet-open, html.sheet-open body { overflow: hidden; }
+.backdrop { touch-action: none; }
+.sheet { overflow-y: auto; overscroll-behavior: contain; }
+.cats, .cat-list { overscroll-behavior: contain; }
 @keyframes up { from { transform: translateY(100%); } }
 @keyframes fade { from { opacity: 0; } }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
