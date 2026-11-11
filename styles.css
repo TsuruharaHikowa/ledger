@@ -251,3 +251,22 @@ html.sheet-open, html.sheet-open body { overflow: hidden; }
 .cur-list .item .sym { flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--fill); color: var(--ink2); font-size: 14px; font-weight: 600; }
 .cur-list .item.on .sym { background: var(--ink); color: var(--bg); }
 .cur-list .check { color: var(--ink); font-weight: 700; }
+
+/* 记一笔里的币种下拉菜单 */
+.cur-wrap { position: relative; display: inline-flex; }
+.cur-wrap.open { z-index: 3; }
+.cur-wrap.open .cur-chip { background: var(--ink); color: var(--bg); }
+.cur-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; min-width: 150px;
+  display: flex; flex-direction: column; padding: 4px;
+  background: var(--card); border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .18), 0 0 0 1px var(--line);
+  animation: fade .15s;
+}
+.cur-menu button { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 8px; font-size: 15px; text-align: left; }
+.cur-menu button:active { background: var(--fill); }
+.cur-menu .sym { width: 30px; color: var(--muted); font-size: 13px; font-weight: 600; }
+.cur-menu .nm { flex: 1; }
+.cur-menu button.on .nm { font-weight: 600; }
+.cur-menu .check { font-weight: 700; }
+.menu-mask { position: absolute; inset: 0; z-index: 2; }

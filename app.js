@@ -374,7 +374,10 @@ function sheetEdit() {
     ${S.cats.filter(x => x.type === E.type).map(x => `<button class="cat ${x.id === E.cat ? 'on' : ''}" data-action="pick-cat" data-id="${esc(x.id)}">${esc(x.name)}</button>`).join('')}
   </div>
   <div class="amount-row">
-    <span class="left"><span class="who" id="who">${esc(c.name)}</span><button class="cur-chip" data-action="edit-cur" aria-label="更换这笔的币种">${CUR[E.cur].name}<svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button></span>
+    <span class="left"><span class="who" id="who">${esc(c.name)}</span><span class="cur-wrap ${E.curMenu ? 'open' : ''}">
+      <button class="cur-chip" data-action="edit-cur" aria-label="更换这笔的币种" aria-expanded="${!!E.curMenu}">${CUR[E.cur].name}<svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>
+      ${E.curMenu ? `<span class="cur-menu" role="menu">${CUR_KEYS.map(k => `<button role="menuitemradio" aria-checked="${k === E.cur}" class="${k === E.cur ? 'on' : ''}" data-action="edit-pick-cur" data-v="${k}"><span class="sym">${CUR[k].sym}</span><span class="nm">${CUR[k].name}</span>${k === E.cur ? '<span class="check">✓</span>' : ''}</button>`).join('')}</span>` : ''}
+    </span></span>
     <span class="num"><small>${CUR[E.cur].sym}</small><span id="amt">${amtText(E.amt)}</span></span>
   </div>
   <div class="meta-row">
@@ -386,7 +389,8 @@ function sheetEdit() {
     ${['4', '5', '6'].map(k => `<button data-action="key" data-k="${k}">${k}</button>`).join('')}<button class="fn" data-action="key" data-k="clr">清空</button>
     ${['1', '2', '3'].map(k => `<button data-action="key" data-k="${k}">${k}</button>`).join('')}<button class="ok" data-action="save-tx">完成</button>
     <button data-action="key" data-k=".">.</button><button data-action="key" data-k="0">0</button><button data-action="key" data-k="00">00</button>
-  </div>`;
+  </div>
+  ${E.curMenu ? `<div class="menu-mask" data-action="close-cur-menu"></div>` : ''}`;
 }
 function pressKey(k) {
   const E = S.sheet;
@@ -588,10 +592,13 @@ const ACTIONS = {
     document.querySelectorAll('.cat').forEach(b => b.classList.toggle('on', b === el));
     $('#who').textContent = cat(el.dataset.id).name;
   },
-  'edit-cur'() {
-    // 依次轮换：人民币 → 美元 → 日元 → 欧元 → 英镑
+  // 点币种按钮打开下拉菜单，再点一次或点菜单外面关闭
+  'edit-cur'() { S.sheet.curMenu = !S.sheet.curMenu; renderSheet(); },
+  'close-cur-menu'() { S.sheet.curMenu = false; renderSheet(); },
+  'edit-pick-cur'(el) {
     const E = S.sheet;
-    E.cur = CUR_KEYS[(CUR_KEYS.indexOf(E.cur) + 1) % CUR_KEYS.length];
+    E.cur = el.dataset.v;
+    E.curMenu = false;
     if (!CUR[E.cur].dec && E.amt.includes('.')) E.amt = E.amt.split('.')[0];
     renderSheet();
   },
