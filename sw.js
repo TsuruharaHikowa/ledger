@@ -1,5 +1,5 @@
 // 离线缓存：先用缓存秒开，同时在后台拉取新版本，下次打开生效
-const CACHE = 'ledger-v3';
+const CACHE = 'ledger-v4';
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
