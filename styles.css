@@ -227,3 +227,21 @@ button.item:active { background: var(--fill); }
   background: var(--ink); color: var(--bg); padding: 9px 18px; border-radius: 10px; font-size: 14px; white-space: nowrap;
   animation: fade .2s;
 }
+
+/* 币种 */
+.title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cur-pill, .cur-chip {
+  display: inline-flex; align-items: center; gap: 1px; flex: none;
+  height: 26px; padding: 0 6px 0 10px; border-radius: 13px;
+  background: var(--card); color: var(--ink2); font-size: 13px; font-weight: 600;
+}
+.cur-pill:active, .cur-chip:active { background: var(--fill); }
+.cur-pill svg, .cur-chip svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.cur-chip { background: var(--fill); }
+.amount-row .left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.hero .others { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; font-size: 13px; color: var(--ink2); font-variant-numeric: tabular-nums; }
+.hero .others .k { display: block; margin-bottom: 2px; }
+.sheet-title { font-size: 16px; font-weight: 600; }
+.cur-list .item .sym { flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--fill); color: var(--ink2); font-size: 14px; font-weight: 600; }
+.cur-list .item.on .sym { background: var(--ink); color: var(--bg); }
+.cur-list .check { color: var(--ink); font-weight: 700; }

@@ -6,7 +6,24 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const pad = n => String(n).padStart(2, '0');
 const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const today = () => ymd(new Date());
-const fmt = c => (c / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/* ---------- 币种 ---------- */
+// 金额一律以「分」（最小单位 ×100）存储；日元没有小数，显示和输入时不带小数
+const CUR = {
+  CNY: { name: '人民币', sym: '¥', dec: 2 },
+  USD: { name: '美元', sym: '$', dec: 2 },
+  JPY: { name: '日元', sym: 'JP¥', dec: 0 },
+  EUR: { name: '欧元', sym: '€', dec: 2 },
+  GBP: { name: '英镑', sym: '£', dec: 2 },
+};
+const CUR_KEYS = Object.keys(CUR);
+const curOf = t => (CUR[t.cur] ? t.cur : 'CNY'); // 旧记录没有币种字段，按人民币算
+const fmt = (c, cur = 'CNY') => {
+  const d = CUR[cur].dec;
+  return (c / 100).toLocaleString('zh-CN', { minimumFractionDigits: d, maximumFractionDigits: d });
+};
+const money = (c, cur) => CUR[cur].sym + fmt(c, cur);
+// 明细列表里人民币保持原样不带符号，其他币种带上符号以示区分
+const tagMoney = (c, cur) => (cur === 'CNY' ? '' : CUR[cur].sym) + fmt(c, cur);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -75,35 +92,48 @@ const S = {
   stats: { mode: 'month', month: today().slice(0, 7), year: today().slice(0, 4), type: 'expense' },
   txs: [],
   cats: [],
-  sheet: null, // { kind: 'edit' | 'cats', ... }
+  cur: 'CNY', // 当前币种：记新账默认用它，统计也按它计算；切换后会保存，不会自动切回
+  sheet: null, // { kind: 'edit' | 'cats' | 'cur', ... }
 };
 const cat = id => S.cats.find(c => c.id === id) || GONE;
 const glyph = c => esc([...c.name][0] || '?'); // 用分类名的第一个字当图标
 const sumOf = (list, type) => list.reduce((a, t) => a + (t.type === type ? t.amount : 0), 0);
+const inCur = (list, cur = S.cur) => list.filter(t => curOf(t) === cur);
+// 按币种分别求和（不同币种不能直接相加），按固定币种顺序返回 [[币种, 金额], ...]
+const sumByCur = (list, type) => CUR_KEYS.map(k => [k, sumOf(inCur(list, k), type)]).filter(([, v]) => v);
+const curPill = () => `<button class="cur-pill" data-action="open-cur" aria-label="切换币种">${CUR[S.cur].name}<svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>`;
 
 /* ---------- 明细页 ---------- */
 function viewHome() {
   const list = S.txs.filter(t => t.date.startsWith(S.month))
     .sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created);
-  const exp = sumOf(list, 'expense'), inc = sumOf(list, 'income');
+  const cur = S.cur, mine = inCur(list);
+  const exp = sumOf(mine, 'expense'), inc = sumOf(mine, 'income');
   const days = [];
   for (const t of list) {
     if (!days.length || days[days.length - 1].date !== t.date) days.push({ date: t.date, items: [] });
     days[days.length - 1].items.push(t);
   }
   const bal = inc - exp;
+  // 本月还有其他币种的记录时，在汇总卡片下方单独列出
+  const others = list.filter(t => curOf(t) !== cur);
+  const otherLine = (type, word) => {
+    const parts = sumByCur(others, type);
+    return parts.length ? `<div>${word} ${parts.map(([k, v]) => money(v, k)).join(' · ')}</div>` : '';
+  };
   return `
   <div class="top">
-    <h1>记账本</h1>
+    <div class="title"><h1>记账本</h1>${curPill()}</div>
     ${periodNav(monthLabel(S.month), 'home')}
   </div>
   <section class="hero">
     <div class="k">本月支出</div>
-    <div class="v"><small>¥</small>${fmt(exp)}</div>
+    <div class="v"><small>${CUR[cur].sym}</small>${fmt(exp, cur)}</div>
     <div class="row">
-      <div class="cell"><span class="k">收入</span><b>¥${fmt(inc)}</b></div>
-      <div class="cell"><span class="k">结余</span><b>${bal < 0 ? '-' : ''}¥${fmt(Math.abs(bal))}</b></div>
+      <div class="cell"><span class="k">收入</span><b>${money(inc, cur)}</b></div>
+      <div class="cell"><span class="k">结余</span><b>${bal < 0 ? '-' : ''}${money(Math.abs(bal), cur)}</b></div>
     </div>
+    ${others.length ? `<div class="others"><span class="k">其他币种</span>${otherLine('expense', '支出')}${otherLine('income', '收入')}</div>` : ''}
   </section>
   ${days.length ? days.map(dayBlock).join('') : `<div class="empty">这个月还没有记录<br>点右下角的 + 记一笔</div>`}`;
 }
@@ -116,8 +146,11 @@ function periodNav(label, scope) {
 }
 function dayBlock(day) {
   const d = new Date(day.date + 'T00:00:00');
-  const exp = sumOf(day.items, 'expense'), inc = sumOf(day.items, 'income');
-  const totals = [exp ? `支出 ${fmt(exp)}` : '', inc ? `收入 ${fmt(inc)}` : ''].filter(Boolean).join('　');
+  const part = (type, word) => {
+    const s = sumByCur(day.items, type);
+    return s.length ? `${word} ${s.map(([k, v]) => tagMoney(v, k)).join(' · ')}` : '';
+  };
+  const totals = [part('expense', '支出'), part('income', '收入')].filter(Boolean).join('　');
   return `<section class="day">
     <div class="day-head"><span>${d.getMonth() + 1}月${d.getDate()}日 ${WEEK[d.getDay()]}${day.date === today() ? ' · 今天' : ''}</span><span>${totals}</span></div>
     <div class="card">${day.items.map(txRow).join('')}</div>
@@ -128,7 +161,7 @@ function txRow(t) {
   return `<button class="tx" data-action="edit" data-id="${esc(t.id)}">
     <span class="ic">${glyph(c)}</span>
     <span class="mid"><div class="name">${esc(c.name)}</div>${t.note ? `<div class="note">${esc(t.note)}</div>` : ''}</span>
-    <span class="amt ${t.type}">${t.type === 'income' ? '+' : '-'}${fmt(t.amount)}</span>
+    <span class="amt ${t.type}">${t.type === 'income' ? '+' : '-'}${tagMoney(t.amount, curOf(t))}</span>
   </button>`;
 }
 
@@ -136,7 +169,8 @@ function txRow(t) {
 function viewStats() {
   const st = S.stats;
   const key = st.mode === 'month' ? st.month : st.year;
-  const list = S.txs.filter(t => t.date.startsWith(key));
+  const cur = S.cur;
+  const list = inCur(S.txs.filter(t => t.date.startsWith(key)));
   const exp = sumOf(list, 'expense'), inc = sumOf(list, 'income'), bal = inc - exp;
   const typed = list.filter(t => t.type === st.type);
   const total = sumOf(typed, st.type);
@@ -151,7 +185,7 @@ function viewStats() {
 
   return `
   <div class="top">
-    <h1>统计</h1>
+    <div class="title"><h1>统计</h1>${curPill()}</div>
     ${periodNav(st.mode === 'month' ? monthLabel(st.month) : `${st.year}年`, 'stats')}
   </div>
   <div class="bar-row">
@@ -165,9 +199,9 @@ function viewStats() {
     </div>
   </div>
   <div class="tiles">
-    <div class="tile"><div class="k">支出</div><div class="v">${tileNum(exp)}</div></div>
-    <div class="tile"><div class="k">收入</div><div class="v">${tileNum(inc)}</div></div>
-    <div class="tile"><div class="k">结余</div><div class="v">${bal < 0 ? '-' : ''}${tileNum(Math.abs(bal))}</div></div>
+    <div class="tile"><div class="k">支出</div><div class="v">${tileNum(exp, cur)}</div></div>
+    <div class="tile"><div class="k">收入</div><div class="v">${tileNum(inc, cur)}</div></div>
+    <div class="tile"><div class="k">结余</div><div class="v">${bal < 0 ? '-' : ''}${tileNum(Math.abs(bal), cur)}</div></div>
   </div>
   <section class="panel">
     <div class="panel-head"><h2>${st.mode === 'month' ? '每日' : '每月'}${word}</h2><span class="sub">点按柱子查看金额</span></div>
@@ -178,10 +212,10 @@ function viewStats() {
     ${ranks.length ? donut(ranks, total, word) + ranks.map(([id, v], i) => {
       const c = cat(id);
       return `<div class="rank" style="--c:${colorOf(id, i)}">
-        <div class="line1"><span><i class="dot"></i><span class="nm">${esc(c.name)}</span><span class="pct">${(v / total * 100).toFixed(1)}%</span></span><span class="val">¥${fmt(v)}</span></div>
+        <div class="line1"><span><i class="dot"></i><span class="nm">${esc(c.name)}</span><span class="pct">${(v / total * 100).toFixed(1)}%</span></span><span class="val">${money(v, cur)}</span></div>
         <div class="track"><i style="width:${(v / top * 100).toFixed(1)}%"></i></div>
       </div>`;
-    }).join('') : `<div class="empty" style="padding:28px 0">这段时间没有${word}记录</div>`}
+    }).join('') : `<div class="empty" style="padding:28px 0">这段时间没有${CUR[cur].name}${word}记录</div>`}
   </section>`;
 }
 
@@ -202,18 +236,18 @@ function donut(ranks, total, word) {
   let off = 0;
   const arcs = segs.map(s => {
     const len = s.v / total * C;
-    const arc = `<circle class="slice" data-action="slice" data-name="${esc(s.name)} ${(s.v / total * 100).toFixed(1)}%" data-val="¥${fmt(s.v)}" cx="80" cy="80" r="${R}" style="stroke:${s.color}" stroke-dasharray="${Math.max(len - gap, 0.5)} ${C}" stroke-dashoffset="${-off}"/>`;
+    const arc = `<circle class="slice" data-action="slice" data-name="${esc(s.name)} ${(s.v / total * 100).toFixed(1)}%" data-val="${money(s.v, S.cur)}" cx="80" cy="80" r="${R}" style="stroke:${s.color}" stroke-dasharray="${Math.max(len - gap, 0.5)} ${C}" stroke-dashoffset="${-off}"/>`;
     off += len;
     return arc;
   }).join('');
-  return `<div class="donut" id="donut" data-name="总${word}" data-val="¥${fmt(total)}">
+  return `<div class="donut" id="donut" data-name="总${word}" data-val="${money(total, S.cur)}">
     <svg viewBox="0 0 160 160" role="img" aria-label="${word}分类占比"><g transform="rotate(-90 80 80)">${arcs}</g></svg>
-    <div class="center"><div class="k" id="d-k">总${word}</div><div class="v" id="d-v">¥${fmt(total)}</div></div>
+    <div class="center"><div class="k" id="d-k">总${word}</div><div class="v" id="d-v">${money(total, S.cur)}</div></div>
   </div>`;
 }
 
 // 小方块里空间有限：百万以上改用「万」为单位
-const tileNum = c => c >= 1e8 ? `${(c / 1e6).toFixed(2)}万` : fmt(c);
+const tileNum = (c, cur) => c >= 1e8 ? `${(c / 1e6).toFixed(2)}万` : fmt(c, cur);
 
 function trendData() {
   const st = S.stats;
@@ -221,11 +255,11 @@ function trendData() {
     const [y, m] = st.month.split('-').map(Number);
     const n = new Date(y, m, 0).getDate();
     const data = Array.from({ length: n }, (_, i) => ({ label: (i === 0 || (i + 1) % 5 === 0) ? String(i + 1) : '', tip: `${m}月${i + 1}日`, value: 0 }));
-    for (const t of S.txs) if (t.type === st.type && t.date.startsWith(st.month)) data[Number(t.date.slice(8)) - 1].value += t.amount;
+    for (const t of inCur(S.txs)) if (t.type === st.type && t.date.startsWith(st.month)) data[Number(t.date.slice(8)) - 1].value += t.amount;
     return data;
   }
   const data = Array.from({ length: 12 }, (_, i) => ({ label: `${i + 1}月`, tip: `${st.year}年${i + 1}月`, value: 0 }));
-  for (const t of S.txs) if (t.type === st.type && t.date.startsWith(st.year)) data[Number(t.date.slice(5, 7)) - 1].value += t.amount;
+  for (const t of inCur(S.txs)) if (t.type === st.type && t.date.startsWith(st.year)) data[Number(t.date.slice(5, 7)) - 1].value += t.amount;
   return data;
 }
 function niceMax(yuan) {
@@ -275,7 +309,7 @@ function selectBar(i) {
   el.classList.toggle('has-sel', !!bar);
   const tip = document.createElement('div');
   tip.className = 'tip';
-  tip.textContent = `${d.tip}　¥${fmt(d.value)}`;
+  tip.textContent = `${d.tip}　${money(d.value, S.cur)}`;
   el.appendChild(tip);
   const half = tip.offsetWidth / 2;
   tip.style.left = Math.min(W - half, Math.max(half, pl + slot * i + slot / 2)) + 'px';
@@ -312,6 +346,7 @@ function openEdit(tx) {
     id: tx ? tx.id : null,
     type,
     cat: tx ? tx.cat : S.cats.find(c => c.type === type)?.id,
+    cur: tx ? curOf(tx) : S.cur,
     amt: tx ? String(tx.amount / 100) : '',
     date: tx ? tx.date : (S.month === today().slice(0, 7) ? today() : `${S.month}-01`),
     note: tx ? tx.note || '' : '',
@@ -339,8 +374,8 @@ function sheetEdit() {
     ${S.cats.filter(x => x.type === E.type).map(x => `<button class="cat ${x.id === E.cat ? 'on' : ''}" data-action="pick-cat" data-id="${esc(x.id)}">${esc(x.name)}</button>`).join('')}
   </div>
   <div class="amount-row">
-    <span class="who" id="who">${esc(c.name)}</span>
-    <span class="num"><small>¥</small><span id="amt">${amtText(E.amt)}</span></span>
+    <span class="left"><span class="who" id="who">${esc(c.name)}</span><button class="cur-chip" data-action="edit-cur" aria-label="更换这笔的币种">${CUR[E.cur].name}<svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button></span>
+    <span class="num"><small>${CUR[E.cur].sym}</small><span id="amt">${amtText(E.amt)}</span></span>
   </div>
   <div class="meta-row">
     <input type="date" id="f-date" value="${esc(E.date)}" aria-label="日期">
@@ -358,7 +393,10 @@ function pressKey(k) {
   let a = E.amt;
   if (k === 'del') a = a.slice(0, -1);
   else if (k === 'clr') a = '';
-  else if (k === '.') { if (!a.includes('.')) a = (a || '0') + '.'; }
+  else if (k === '.') {
+    if (!CUR[E.cur].dec) return toast(`${CUR[E.cur].name}没有小数`);
+    if (!a.includes('.')) a = (a || '0') + '.';
+  }
   else if (a.includes('.')) a += k.slice(0, 2 - a.split('.')[1].length);
   else if (a === '' || a === '0') a = k === '00' ? '0' : k;
   else if ((a + k).length <= 9) a += k;
@@ -370,14 +408,36 @@ async function saveTx() {
   const amount = Math.round(parseFloat(E.amt || '0') * 100);
   if (!(amount > 0)) return toast('请先输入金额');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(E.date)) return toast('请选择日期');
-  const tx = { id: E.id || uid(), type: E.type, cat: E.cat, amount, date: E.date, note: E.note.trim(), created: E.created || Date.now() };
+  const tx = { id: E.id || uid(), type: E.type, cat: E.cat, amount, cur: E.cur, date: E.date, note: E.note.trim(), created: E.created || Date.now() };
   await dbPut(tx);
+  // 记新账时换了币种，就把它当作当前币种记住，下一笔继续用
+  if (!E.id && E.cur !== S.cur) await setCur(E.cur);
   const i = S.txs.findIndex(t => t.id === tx.id);
   if (i >= 0) S.txs[i] = tx; else S.txs.push(tx);
   S.month = tx.date.slice(0, 7);
   closeSheet();
   render();
   toast(E.id ? '已修改' : '已记一笔');
+}
+
+/* ---------- 币种选择 弹层 ---------- */
+function sheetCur() {
+  return `
+  <div class="sheet-head">
+    <span class="txt"></span>
+    <div class="sheet-title">选择币种</div>
+    <button class="txt right strong" data-action="close-sheet">完成</button>
+  </div>
+  <div class="card cur-list">
+    ${CUR_KEYS.map(k => `<button class="item ${k === S.cur ? 'on' : ''}" data-action="pick-cur" data-v="${k}">
+      <span class="sym">${CUR[k].sym}</span><span class="t">${CUR[k].name}<small>${k}</small></span>${k === S.cur ? '<span class="check">✓</span>' : ''}
+    </button>`).join('')}
+  </div>
+  <div class="foot">切换后会一直保持，直到你再次切换。<br>新记录默认使用当前币种，汇总和统计按币种分开计算。</div>`;
+}
+async function setCur(k) {
+  S.cur = k;
+  await metaSet('cur', k);
 }
 
 /* ---------- 分类管理 弹层 ---------- */
@@ -440,8 +500,8 @@ function exportCSV() {
   if (!S.txs.length) return toast('还没有记录可以导出');
   const q = s => `"${String(s).replace(/"/g, '""')}"`;
   const rows = [...S.txs].sort((a, b) => a.date.localeCompare(b.date) || a.created - b.created)
-    .map(t => [t.date, t.type === 'income' ? '收入' : '支出', q(cat(t.cat).name), (t.amount / 100).toFixed(2), q(t.note || '')].join(','));
-  saveFile(`记账本-${today()}.csv`, '﻿日期,类型,分类,金额,备注\n' + rows.join('\n'), 'text/csv');
+    .map(t => [t.date, t.type === 'income' ? '收入' : '支出', q(cat(t.cat).name), (t.amount / 100).toFixed(CUR[curOf(t)].dec), curOf(t), q(t.note || '')].join(','));
+  saveFile(`记账本-${today()}.csv`, '﻿日期,类型,分类,金额,币种,备注\n' + rows.join('\n'), 'text/csv');
 }
 async function importJSON(file) {
   let data;
@@ -451,7 +511,7 @@ async function importJSON(file) {
     Number.isInteger(t.amount) && t.amount > 0 && /^\d{4}-\d{2}-\d{2}$/.test(t.date)) : null;
   if (!txs || data.app !== 'ledger') return toast('文件不是有效的备份');
   if (!confirm(`备份中有 ${txs.length} 笔记录，导入后会与现有数据合并（相同的记录以备份为准）。继续吗？`)) return;
-  const clean = txs.map(t => ({ id: t.id, type: t.type, cat: String(t.cat ?? ''), amount: t.amount, date: t.date, note: String(t.note ?? '').slice(0, 40), created: Number(t.created) || Date.now() }));
+  const clean = txs.map(t => ({ id: t.id, type: t.type, cat: String(t.cat ?? ''), amount: t.amount, cur: curOf(t), date: t.date, note: String(t.note ?? '').slice(0, 40), created: Number(t.created) || Date.now() }));
   await dbPutMany(clean);
   if (Array.isArray(data.cats)) {
     for (const c of data.cats) {
@@ -482,7 +542,8 @@ function render() {
   if (S.tab === 'stats') drawTrend();
 }
 function renderSheet() {
-  $('#sheet').innerHTML = S.sheet.kind === 'edit' ? sheetEdit() : sheetCats();
+  const k = S.sheet.kind;
+  $('#sheet').innerHTML = k === 'edit' ? sheetEdit() : k === 'cur' ? sheetCur() : sheetCats();
   $('#sheet-root').hidden = false;
 }
 function closeSheet() {
@@ -524,6 +585,22 @@ const ACTIONS = {
     S.sheet.cat = el.dataset.id;
     document.querySelectorAll('.cat').forEach(b => b.classList.toggle('on', b === el));
     $('#who').textContent = cat(el.dataset.id).name;
+  },
+  'edit-cur'() {
+    // 依次轮换：人民币 → 美元 → 日元 → 欧元 → 英镑
+    const E = S.sheet;
+    E.cur = CUR_KEYS[(CUR_KEYS.indexOf(E.cur) + 1) % CUR_KEYS.length];
+    if (!CUR[E.cur].dec && E.amt.includes('.')) E.amt = E.amt.split('.')[0];
+    renderSheet();
+  },
+  'open-cur'() { S.sheet = { kind: 'cur' }; renderSheet(); },
+  async 'pick-cur'(el) {
+    const k = el.dataset.v;
+    closeSheet();
+    if (k === S.cur) return;
+    await setCur(k);
+    render();
+    toast(`已切换为${CUR[k].name}`);
   },
   key(el) { pressKey(el.dataset.k); },
   'save-tx': saveTx,
@@ -581,6 +658,8 @@ addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setT
     S.txs = await dbAll();
     S.cats = (await metaGet('cats')) || null;
     if (!S.cats) { S.cats = DEFAULT_CATS.map(c => ({ ...c })); await metaSet('cats', S.cats); }
+    const savedCur = await metaGet('cur');
+    if (CUR[savedCur]) S.cur = savedCur;
   } catch (err) {
     $('#view').innerHTML = `<div class="empty"><span class="big">⚠️</span>无法打开本地存储。<br>请确认没有使用无痕浏览模式。</div>`;
     return;
